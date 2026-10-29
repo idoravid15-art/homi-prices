@@ -1,0 +1,108 @@
+# The basket's prices at the chains, rebuilt every morning.
+#
+# scripts/prices.mjs downloads the chains' public price files (Price
+# Transparency regulations) and keeps only the basket in app/basket.js, per
+# store. The result is published to this repository's main branch as one
+# commit with no history, and the kiny app reads it from there
+# (raw.githubusercontent.com sends a CORS header; the chains do not).
+#
+# The build lives here, on the build branch (the default branch, so the
+# schedule runs), and not in the app's repository: that one is private, and
+# a public repository's Actions minutes are free. app/prices.js, app/basket.js
+# and parser/shopping.js are copies of the app's; a test in the app fails when
+# they differ, so the two always change together.
+#
+# Publishing pushes with the run's own token; there is no stored secret. Only
+# a run of the build branch publishes: a run of another branch builds and
+# stops, to try a change. Nothing here reads anything of a household. Logs
+# show counts of files and stores, which are the chains' public data.
+#
+# Run by hand with "discover" ticked, it first lists what the basket's rules
+# catch and commits that list back to the branch, for choosing barcodes by
+# hand. It takes twenty to thirty minutes, so it runs only when asked.
+
+name: Basket prices
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      discover:
+        description: 'List candidate barcodes for the basket first'
+        type: boolean
+        default: false
+  push:
+    branches-ignore: [main, build]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: basket-prices
+  cancel-in-progress: false
+
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Discover candidates
+        if: inputs.discover
+        run: |
+          mkdir -p tests/price-samples
+          node scripts/prices.mjs discover tests/price-samples/discover.json
+
+      - name: Commit candidates
+        if: inputs.discover
+        run: |
+          git config user.name "basket-prices"
+          git config user.email "actions@users.noreply.github.com"
+          git add tests/price-samples
+          git commit -m "basket: candidates from the chains' files" || exit 0
+          git pull --rebase -q origin "$GITHUB_REF_NAME" && git push -q origin "HEAD:$GITHUB_REF_NAME"
+
+      - name: Build
+        # Shufersal has its own job below: its site answers GitHub's runners
+        # slowly, and it held every other chain back
+        run: node --max-old-space-size=6144 scripts/prices.mjs build out --skip shufersal
+
+      - name: Publish
+        if: github.ref == 'refs/heads/build'
+        env:
+          PUSH_TOKEN: ${{ github.token }}
+        run: bash scripts/prices-publish.sh out
+
+  # Shufersal alone, after the others are out, with the time it needs: its
+  # listing pages come slowly (twenty minutes on a good morning, none at all on
+  # a bad one), and a branch not reached today keeps what it had for three days,
+  # so a few mornings together cover all of them. It builds into a copy of what
+  # was just published and puts the whole back, its own two files replaced.
+  shufersal:
+    needs: prices
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # main, by name: the default branch is build, which holds no prices
+      - name: What is published
+        run: git clone -q --depth 1 -b main "https://github.com/$GITHUB_REPOSITORY.git" out || mkdir -p out
+
+      - name: Build Shufersal
+        run: node --max-old-space-size=6144 scripts/prices.mjs build out --only shufersal --minutes 110 --listing 60
+
+      - name: Publish
+        if: github.ref == 'refs/heads/build'
+        env:
+          PUSH_TOKEN: ${{ github.token }}
+        run: bash scripts/prices-publish.sh out
