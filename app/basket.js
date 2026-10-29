@@ -10,7 +10,8 @@
 
    How a line knows its items:
      - `codes` are barcodes, the same at every chain, chosen by reading the
-       candidates the chains' own files offered (scripts/prices.mjs discover).
+       candidates the chains' own files offered (scripts/prices.mjs discover,
+       in homi-prices).
        A store's price for the line is its cheapest of them: brands stand in
        for each other, a family takes the one on the shelf.
      - `local` is for what a chain weighs and labels itself (a tomato is item
@@ -22,13 +23,15 @@
    than a wrong one.
 
    Pure. The prices come from the data the daily build writes
-   (scripts/prices.mjs); this only reads them.
+   (scripts/prices.mjs in idoravid15-art/homi-prices); this only reads them.
+   This file, app/prices.js and parser/shopping.js have copies there, for the
+   build: tests/prices-copy.test.js fails when they differ.
    ========================================================== */
 import { normItem } from '../parser/shopping.js';
 
 /* The chains that are read, by the id they publish under. */
 /* Shufersal's site answers GitHub's runners slowly, so it is built by a job of
-   its own after the others (.github/workflows/prices.yml), and a branch it did
+   its own after the others (prices.yml in homi-prices), and a branch it did
    not reach one morning keeps what it had for a few days. */
 export const CHAINS = Object.freeze([
   { id: '7290027600007', key: 'shufersal', name: 'שופרסל' },
@@ -179,9 +182,9 @@ export function priceList(titles, stores) {
   return { matched: ids, common, rows };
 }
 
-/* Where the daily build publishes, one file per chain (see
-   .github/workflows/prices.yml): a public repository of its own, since this
-   one is private and a phone cannot read it. raw.githubusercontent.com sends
+/* Where the daily build publishes, one file per chain: the main branch of
+   a public repository of its own, which also runs the build (on its build
+   branch), since this one is private and a phone cannot read it. raw.githubusercontent.com sends
    a CORS header, which is the reason it is read from there. */
 export const PRICES_BASE = 'https://raw.githubusercontent.com/idoravid15-art/homi-prices/main/';
 export const pricesUrl = chainId => PRICES_BASE + (CHAIN_BY_ID[chainId]?.key || 'x') + '.json';
