@@ -120,6 +120,16 @@ async function listing(chainId) {
       try { files = JSON.parse(json); } catch {}
       for (const f of files) if (f && f.name) out.set(f.name, `${s.base}/${path ? path.replace(/^\.\//, '') + '/' : ''}${f.name}`);
     }
+    /* An empty list used to say nothing of why; this line tells a page that
+       stopped answering from one whose layout moved. Only the shape of the
+       page is logged, never its text. */
+    if (!out.size) {
+      const res = await fetch(`${s.base}/`, { signal: AbortSignal.timeout(60000) }).catch(e => ({ status: String(e.cause?.code || e.name) }));
+      const body = res.text ? await res.text().catch(() => '') : '';
+      const names = [...new Set([...body.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g)].map(m => m[1]))].slice(0, 20);
+      console.log(`${s.base}: nothing listed; root ${res.status}, ${body.length} chars, type ${res.headers?.get('content-type') || '-'}, `
+        + `path ${/const path =/.test(body)}, files ${/const files =/.test(body)}, date ${today || '-'}, names [${names.join(' ')}]`);
+    }
     return [...out].map(([name, url]) => ({ name, url }));
   }
   return [];
